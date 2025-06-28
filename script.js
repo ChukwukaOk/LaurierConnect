@@ -19,6 +19,8 @@ class StudySpace {
         this.hours = hours;
         this.restrictions = restrictions;
         this.crowdStatus = crowdStatus;
+        this.lastUpdated = null;
+        this.updatedBy = null;
     }
 }
 
@@ -31,6 +33,136 @@ class CampusBuilding {
         this.coordinates = coordinates;
         this.services = services;
         this.imageNames = imageNames;
+    }
+}
+
+// Firebase Service
+class FirebaseService {
+    constructor() {
+        this.database = window.firebaseDatabase;
+        this.auth = window.firebaseAuth;
+        this.ref = window.firebaseRef;
+        this.onValue = window.firebaseOnValue;
+        this.set = window.firebaseSet;
+        this.push = window.firebasePush;
+        this.serverTimestamp = window.firebaseServerTimestamp;
+        this.signInAnonymously = window.firebaseSignInAnonymously;
+        this.onAuthStateChanged = window.firebaseOnAuthStateChanged;
+        
+        this.currentUser = null;
+        this.listeners = new Map();
+    }
+
+    async initialize() {
+        try {
+            // Sign in anonymously
+            await this.signInAnonymously(this.auth);
+            
+            // Listen for auth state changes
+            this.onAuthStateChanged(this.auth, (user) => {
+                this.currentUser = user;
+                console.log('Firebase auth state changed:', user ? 'Authenticated' : 'Not authenticated');
+            });
+
+            return true;
+        } catch (error) {
+            console.error('Firebase initialization failed:', error);
+            return false;
+        }
+    }
+
+    // Study Spaces
+    async getStudySpaces() {
+        const studySpacesRef = this.ref(this.database, 'studySpaces');
+        return new Promise((resolve) => {
+            this.onValue(studySpacesRef, (snapshot) => {
+                const data = snapshot.val();
+                if (data) {
+                    const spaces = Object.keys(data).map(key => ({
+                        id: key,
+                        ...data[key]
+                    }));
+                    resolve(spaces);
+                } else {
+                    resolve([]);
+                }
+            });
+        });
+    }
+
+    async updateStudySpaceStatus(spaceId, status) {
+        if (!this.currentUser) {
+            console.error('User not authenticated');
+            return false;
+        }
+
+        try {
+            const spaceRef = this.ref(this.database, `studySpaces/${spaceId}`);
+            await this.set(spaceRef, {
+                crowdStatus: status,
+                lastUpdated: this.serverTimestamp(),
+                updatedBy: this.currentUser.uid
+            });
+            return true;
+        } catch (error) {
+            console.error('Failed to update study space status:', error);
+            return false;
+        }
+    }
+
+    // Listen for real-time updates
+    listenToStudySpaces(callback) {
+        const studySpacesRef = this.ref(this.database, 'studySpaces');
+        
+        const unsubscribe = this.onValue(studySpacesRef, (snapshot) => {
+            const data = snapshot.val();
+            if (data) {
+                const spaces = Object.keys(data).map(key => ({
+                    id: key,
+                    ...data[key]
+                }));
+                callback(spaces);
+            } else {
+                callback([]);
+            }
+        });
+
+        this.listeners.set('studySpaces', unsubscribe);
+        return unsubscribe;
+    }
+
+    // Initialize default study spaces if they don't exist
+    async initializeStudySpaces(defaultSpaces) {
+        const studySpacesRef = this.ref(this.database, 'studySpaces');
+        
+        try {
+            const snapshot = await this.onValue(studySpacesRef, (snapshot) => {
+                const data = snapshot.val();
+                if (!data || Object.keys(data).length === 0) {
+                    // Initialize with default data
+                    defaultSpaces.forEach(space => {
+                        this.set(this.ref(this.database, `studySpaces/${space.id}`), {
+                            building: space.building,
+                            name: space.name,
+                            location: space.location,
+                            hours: space.hours,
+                            restrictions: space.restrictions,
+                            crowdStatus: space.crowdStatus,
+                            lastUpdated: this.serverTimestamp(),
+                            updatedBy: 'system'
+                        });
+                    });
+                }
+            });
+        } catch (error) {
+            console.error('Failed to initialize study spaces:', error);
+        }
+    }
+
+    // Cleanup listeners
+    cleanup() {
+        this.listeners.forEach(unsubscribe => unsubscribe());
+        this.listeners.clear();
     }
 }
 
@@ -48,71 +180,104 @@ class AppState {
         this.currentRoute = null;
         this.searchText = '';
         this.mapType = 'standard';
+        this.firebaseService = new FirebaseService();
+        this.isConnected = false;
     }
 
-    init() {
-        this.loadStudySpaces();
+    async init() {
+        // Initialize Firebase first
+        this.isConnected = await this.firebaseService.initialize();
+        this.updateConnectionStatus();
+        
         this.loadBuildings();
         this.loadSavedData();
+        
+        // Initialize study spaces with Firebase
+        await this.initializeStudySpaces();
+        
+        // Start listening for real-time updates
+        this.startRealtimeUpdates();
     }
 
-    loadStudySpaces() {
-        this.studySpaces = [
-            new StudySpace(
-                'bricker-1',
-                'Bricker Academic Building',
-                'Second and Third Floor',
-                'Second and Third Floor',
-                '7:00 AM - 11:00 PM',
-                'None',
-                this.getSavedCrowdStatus('bricker-1')
-            ),
-            new StudySpace(
-                'fncc-1',
-                'Fred Nichols Campus Centre',
-                '24-Hour Lounge',
-                'Second Floor',
-                'Always Open',
-                'None',
-                this.getSavedCrowdStatus('fncc-1')
-            ),
-            new StudySpace(
-                'fncc-2',
-                'Fred Nichols Campus Centre',
-                'Concourse',
-                'First Floor',
-                'Always Open',
-                'None; OneCard required to access from 11 p.m. – 7 a.m.',
-                this.getSavedCrowdStatus('fncc-2')
-            ),
-            new StudySpace(
-                'fncc-3',
-                'Fred Nichols Campus Centre',
-                'Solarium',
-                'First Floor',
-                'Always Open',
-                'None; OneCard required to access from 11 p.m. – 7 a.m.',
-                this.getSavedCrowdStatus('fncc-3')
-            ),
-            new StudySpace(
-                'lazaridis-1',
-                'Lazaridis Hall',
-                'Lazaridis Hall',
-                'All Floors',
-                '7:00 AM - Midnight',
-                'None; OneCard required from 11 p.m. – midnight',
-                this.getSavedCrowdStatus('lazaridis-1')
-            ),
-            new StudySpace(
-                'library-1',
-                'Library',
-                'Library Inside',
-                'All Floors',
-                'Weekdays 8:30 AM - 10:00 PM; Saturdays and Sundays 11:00 AM - 5:00 PM',
-                'None; seventh floor is a quiet study zone',
-                this.getSavedCrowdStatus('library-1')
-            )
+    async initializeStudySpaces() {
+        const defaultSpaces = [
+            {
+                id: 'bricker-1',
+                building: 'Bricker Academic Building',
+                name: 'Second and Third Floor',
+                location: 'Second and Third Floor',
+                hours: '7:00 AM - 11:00 PM',
+                restrictions: 'None',
+                crowdStatus: 'Unknown'
+            },
+            {
+                id: 'fncc-1',
+                building: 'Fred Nichols Campus Centre',
+                name: '24-Hour Lounge',
+                location: 'Second Floor',
+                hours: 'Always Open',
+                restrictions: 'None',
+                crowdStatus: 'Unknown'
+            },
+            {
+                id: 'fncc-2',
+                building: 'Fred Nichols Campus Centre',
+                name: 'Concourse',
+                location: 'First Floor',
+                hours: 'Always Open',
+                restrictions: 'None; OneCard required to access from 11 p.m. – 7 a.m.',
+                crowdStatus: 'Unknown'
+            },
+            {
+                id: 'fncc-3',
+                building: 'Fred Nichols Campus Centre',
+                name: 'Solarium',
+                location: 'First Floor',
+                hours: 'Always Open',
+                restrictions: 'None; OneCard required to access from 11 p.m. – 7 a.m.',
+                crowdStatus: 'Unknown'
+            },
+            {
+                id: 'lazaridis-1',
+                building: 'Lazaridis Hall',
+                name: 'Lazaridis Hall',
+                location: 'All Floors',
+                hours: '7:00 AM - Midnight',
+                restrictions: 'None; OneCard required from 11 p.m. – midnight',
+                crowdStatus: 'Unknown'
+            },
+            {
+                id: 'library-1',
+                building: 'Library',
+                name: 'Library Inside',
+                location: 'All Floors',
+                hours: 'Weekdays 8:30 AM - 10:00 PM; Saturdays and Sundays 11:00 AM - 5:00 PM',
+                restrictions: 'None; seventh floor is a quiet study zone',
+                crowdStatus: 'Unknown'
+            }
         ];
+
+        await this.firebaseService.initializeStudySpaces(defaultSpaces);
+    }
+
+    startRealtimeUpdates() {
+        this.firebaseService.listenToStudySpaces((spaces) => {
+            this.studySpaces = spaces;
+            this.renderStudySpaces();
+        });
+    }
+
+    updateConnectionStatus() {
+        const indicator = document.getElementById('connection-indicator');
+        const text = document.getElementById('connection-text');
+        
+        if (this.isConnected) {
+            indicator.className = 'connection-dot connected';
+            text.textContent = 'Connected';
+        } else {
+            indicator.className = 'connection-dot disconnected';
+            text.textContent = 'Disconnected';
+        }
     }
 
     loadBuildings() {
@@ -218,14 +383,6 @@ class AppState {
         ];
     }
 
-    getSavedCrowdStatus(spaceId) {
-        return localStorage.getItem(`crowdStatus_${spaceId}`) || 'Unknown';
-    }
-
-    saveCrowdStatus(spaceId, status) {
-        localStorage.setItem(`crowdStatus_${spaceId}`, status);
-    }
-
     loadSavedData() {
         // Load any saved user preferences or data
         const savedUser = localStorage.getItem('currentUser');
@@ -235,13 +392,14 @@ class AppState {
         }
     }
 
-    updateCrowdStatus(spaceId, newStatus) {
-        const space = this.studySpaces.find(s => s.id === spaceId);
-        if (space) {
-            space.crowdStatus = newStatus;
-            this.saveCrowdStatus(spaceId, newStatus);
-            this.renderStudySpaces();
+    async updateCrowdStatus(spaceId, newStatus) {
+        const success = await this.firebaseService.updateStudySpaceStatus(spaceId, newStatus);
+        if (success) {
+            console.log(`Updated ${spaceId} status to ${newStatus}`);
+        } else {
+            console.error('Failed to update crowd status');
         }
+        return success;
     }
 
     getFilteredBuildings() {
@@ -250,6 +408,24 @@ class AppState {
             building.name.toLowerCase().includes(this.searchText.toLowerCase()) ||
             building.code.toLowerCase().includes(this.searchText.toLowerCase())
         );
+    }
+
+    formatTimestamp(timestamp) {
+        if (!timestamp) return 'Never';
+        
+        const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+        const now = new Date();
+        const diffMs = now - date;
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMs / 3600000);
+        const diffDays = Math.floor(diffMs / 86400000);
+
+        if (diffMins < 1) return 'Just now';
+        if (diffMins < 60) return `${diffMins} minute${diffMins > 1 ? 's' : ''} ago`;
+        if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+        if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+        
+        return date.toLocaleDateString();
     }
 }
 
@@ -260,8 +436,8 @@ class LaurierConnectApp {
         this.init();
     }
 
-    init() {
-        this.state.init();
+    async init() {
+        await this.state.init();
         this.setupEventListeners();
         this.renderWelcomeScreen();
     }
@@ -521,6 +697,10 @@ class LaurierConnectApp {
         currentIndicator.className = `status-indicator ${this.getStatusClass(space.crowdStatus)}`;
         currentText.textContent = space.crowdStatus;
 
+        // Update last updated time
+        const lastUpdatedTime = document.getElementById('last-updated-time');
+        lastUpdatedTime.textContent = this.state.formatTimestamp(space.lastUpdated);
+
         // Update status button selection
         document.querySelectorAll('.status-btn').forEach(btn => {
             btn.classList.remove('selected');
@@ -534,7 +714,7 @@ class LaurierConnectApp {
         this.state.selectedStudySpace = null;
     }
 
-    updateStudySpaceStatus(status) {
+    async updateStudySpaceStatus(status) {
         if (!this.state.selectedStudySpace) return;
 
         // Update button selection
@@ -543,25 +723,30 @@ class LaurierConnectApp {
         });
         event.target.closest('.status-btn').classList.add('selected');
 
-        // Update the study space
+        // Update the study space via Firebase
         const statusText = status === 'empty' ? 'Empty' : 
                           status === 'notCrowded' ? 'Not Crowded' : 
                           status === 'veryBusy' ? 'Very Busy' : 'Unknown';
 
-        this.state.updateCrowdStatus(this.state.selectedStudySpace.id, statusText);
-
-        // Update current status display
-        const currentIndicator = document.getElementById('current-status-indicator');
-        const currentText = document.getElementById('current-status-text');
+        const success = await this.state.updateCrowdStatus(this.state.selectedStudySpace.id, statusText);
         
-        currentIndicator.className = `status-indicator ${this.getStatusClass(statusText)}`;
-        currentText.textContent = statusText;
+        if (success) {
+            // Update current status display
+            const currentIndicator = document.getElementById('current-status-indicator');
+            const currentText = document.getElementById('current-status-text');
+            
+            currentIndicator.className = `status-indicator ${this.getStatusClass(statusText)}`;
+            currentText.textContent = statusText;
+            
+            // Update last updated time
+            const lastUpdatedTime = document.getElementById('last-updated-time');
+            lastUpdatedTime.textContent = 'Just now';
+        } else {
+            alert('Failed to update status. Please try again.');
+        }
     }
 
     refreshStudySpaces() {
-        // Simulate refresh by updating the display
-        this.renderStudySpaces();
-        
         // Show a brief loading state
         const refreshBtn = document.getElementById('refresh-study');
         const originalText = refreshBtn.innerHTML;
@@ -586,4 +771,4 @@ class LaurierConnectApp {
 let app;
 document.addEventListener('DOMContentLoaded', () => {
     app = new LaurierConnectApp();
-});
+}); 
