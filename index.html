@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Laurier Connect</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+</head>
+<body>
+    <!-- Welcome Screen -->
+    <div id="welcome-screen" class="welcome-screen">
+        <div class="welcome-content">
+            <div class="welcome-icon">
+                <i class="fas fa-hawk"></i>
+            </div>
+            <h1>Laurier Connect</h1>
+            <p>Your campus companion for navigation and study spaces</p>
+            <button id="get-started-btn" class="get-started-btn">Let's Get Started</button>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div id="main-app" class="main-app hidden">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="logo">
+                    <i class="fas fa-hawk"></i>
+                    <span>Laurier Connect</span>
+                </div>
+                <nav class="nav-tabs">
+                    <button class="nav-tab active" data-tab="map">
+                        <i class="fas fa-map"></i>
+                        <span>Map</span>
+                    </button>
+                    <button class="nav-tab" data-tab="study">
+                        <i class="fas fa-book"></i>
+                        <span>Study Spaces</span>
+                    </button>
+                </nav>
+            </div>
+        </header>
+
+        <!-- Map Tab Content -->
+        <div id="map-tab" class="tab-content active">
+            <div class="map-container">
+                <div class="map-controls">
+                    <div class="search-container">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="building-search" placeholder="Search buildings...">
+                        <button id="clear-search" class="clear-search hidden">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="map-type-selector">
+                        <button class="map-type-btn active" data-type="standard">Standard</button>
+                        <button class="map-type-btn" data-type="satellite">Satellite</button>
+                        <button class="map-type-btn" data-type="hybrid">Hybrid</button>
+                    </div>
+                </div>
+                <div id="map" class="map"></div>
+                <div class="map-sidebar">
+                    <h3>Campus Buildings</h3>
+                    <div id="buildings-list" class="buildings-list"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Study Spaces Tab Content -->
+        <div id="study-tab" class="tab-content">
+            <div class="study-container">
+                <div class="study-header">
+                    <h2>Study Spaces</h2>
+                    <button id="refresh-study" class="refresh-btn">
+                        <i class="fas fa-sync-alt"></i>
+                        Refresh
+                    </button>
+                </div>
+                <div id="study-spaces-list" class="study-spaces-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Building Detail Modal -->
+    <div id="building-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="building-name"></h2>
+                <button class="close-btn" id="close-building-modal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="building-info">
+                    <div class="info-row">
+                        <span class="label">Code:</span>
+                        <span id="building-code"></span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Description:</span>
+                        <span id="building-description"></span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Services:</span>
+                        <div id="building-services" class="services-list"></div>
+                    </div>
+                </div>
+                <div class="route-section">
+                    <h3>Get Directions</h3>
+                    <button id="get-directions-btn" class="directions-btn">
+                        <i class="fas fa-route"></i>
+                        Show Route
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Study Space Detail Modal -->
+    <div id="study-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="study-name"></h2>
+                <button class="close-btn" id="close-study-modal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="study-info">
+                    <div class="info-row">
+                        <span class="label">Building:</span>
+                        <span id="study-building"></span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Location:</span>
+                        <span id="study-location"></span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Hours:</span>
+                        <span id="study-hours"></span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Restrictions:</span>
+                        <span id="study-restrictions"></span>
+                    </div>
+                </div>
+                <div class="crowd-status-section">
+                    <h3>Update Crowd Status</h3>
+                    <div class="status-selector">
+                        <button class="status-btn" data-status="empty">
+                            <div class="status-indicator empty"></div>
+                            <span>Empty</span>
+                        </button>
+                        <button class="status-btn" data-status="notCrowded">
+                            <div class="status-indicator not-crowded"></div>
+                            <span>Not Crowded</span>
+                        </button>
+                        <button class="status-btn" data-status="veryBusy">
+                            <div class="status-indicator very-busy"></div>
+                            <span>Very Busy</span>
+                        </button>
+                    </div>
+                    <div class="current-status">
+                        <span class="label">Current Status:</span>
+                        <div class="status-display">
+                            <div id="current-status-indicator" class="status-indicator"></div>
+                            <span id="current-status-text">Unknown</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
