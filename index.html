@@ -74,10 +74,16 @@
             <div class="study-container">
                 <div class="study-header">
                     <h2>Study Spaces</h2>
-                    <button id="refresh-study" class="refresh-btn">
-                        <i class="fas fa-sync-alt"></i>
-                        Refresh
-                    </button>
+                    <div class="study-controls">
+                        <div class="connection-status">
+                            <span id="connection-indicator" class="connection-dot"></span>
+                            <span id="connection-text">Connecting...</span>
+                        </div>
+                        <button id="refresh-study" class="refresh-btn">
+                            <i class="fas fa-sync-alt"></i>
+                            Refresh
+                        </button>
+                    </div>
                 </div>
                 <div id="study-spaces-list" class="study-spaces-list"></div>
             </div>
@@ -170,12 +176,53 @@
                             <span id="current-status-text">Unknown</span>
                         </div>
                     </div>
+                    <div class="last-updated">
+                        <span class="label">Last Updated:</span>
+                        <span id="last-updated-time">Never</span>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
+    <!-- Firebase SDK -->
+    <script type="module">
+        // Import the functions you need from the SDKs you need
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getDatabase, ref, onValue, set, push, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+
+        // Your web app's Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyAbA66ovrKzf1T8sLF4EY1BSbJNIZHWE04",
+            authDomain: "laurier-connect.firebaseapp.com",
+            databaseURL: "https://laurier-connect-default-rtdb.firebaseio.com",
+            projectId: "laurier-connect",
+            storageBucket: "laurier-connect.firebasestorage.app",
+            messagingSenderId: "829462107486",
+            appId: "1:829462107486:web:d3fcf41d180d15020dabcf",
+            measurementId: "G-02LE2DTSND"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const database = getDatabase(app);
+        const auth = getAuth(app);
+
+        // Make Firebase available globally
+        window.firebaseApp = app;
+        window.firebaseDatabase = database;
+        window.firebaseAuth = auth;
+        window.firebaseRef = ref;
+        window.firebaseOnValue = onValue;
+        window.firebaseSet = set;
+        window.firebasePush = push;
+        window.firebaseServerTimestamp = serverTimestamp;
+        window.firebaseSignInAnonymously = signInAnonymously;
+        window.firebaseOnAuthStateChanged = onAuthStateChanged;
+    </script>
+
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="script.js"></script>
 </body>
-</html>
+</html> 
