@@ -751,13 +751,21 @@ class LaurierConnectApp {
         const success = await this.state.updateCrowdStatus(this.state.selectedStudySpace.id, statusText);
         
         if (success) {
+            // Re-fetch the latest study space object from state
+            const updatedSpace = this.state.studySpaces.find(s => s.id === this.state.selectedStudySpace.id);
+            if (updatedSpace) {
+                this.state.selectedStudySpace = updatedSpace;
+                document.getElementById('study-name').textContent = updatedSpace.name;
+                document.getElementById('study-building').textContent = updatedSpace.building;
+                document.getElementById('study-location').textContent = updatedSpace.location;
+                document.getElementById('study-hours').textContent = updatedSpace.hours;
+                document.getElementById('study-restrictions').textContent = updatedSpace.restrictions;
+            }
             // Update current status display
             const currentIndicator = document.getElementById('current-status-indicator');
             const currentText = document.getElementById('current-status-text');
-            
             currentIndicator.className = `status-indicator ${this.getStatusClass(statusText)}`;
             currentText.textContent = statusText;
-            
             // Update last updated time
             const lastUpdatedTime = document.getElementById('last-updated-time');
             lastUpdatedTime.textContent = 'Just now';
