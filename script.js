@@ -448,6 +448,26 @@ class LaurierConnectApp {
             this.showMainApp();
         });
 
+        // Sidebar toggle for mobile
+        const sidebarToggle = document.getElementById('sidebar-toggle');
+        const mapSidebar = document.getElementById('map-sidebar');
+        function handleSidebarToggle() {
+            mapSidebar.classList.toggle('open');
+        }
+        sidebarToggle.addEventListener('click', handleSidebarToggle);
+        // Show/hide toggle button based on screen size
+        function updateSidebarToggleVisibility() {
+            if (window.innerWidth <= 768) {
+                sidebarToggle.style.display = 'flex';
+                mapSidebar.classList.remove('open');
+            } else {
+                sidebarToggle.style.display = 'none';
+                mapSidebar.classList.remove('open');
+            }
+        }
+        window.addEventListener('resize', updateSidebarToggleVisibility);
+        updateSidebarToggleVisibility();
+
         // Navigation tabs
         document.querySelectorAll('.nav-tab').forEach(tab => {
             tab.addEventListener('click', (e) => {
