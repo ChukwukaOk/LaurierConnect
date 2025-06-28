@@ -96,9 +96,22 @@ class FirebaseService {
             return false;
         }
 
+        // Find the current study space object to preserve all fields
+        const allSpaces = window.app?.state?.studySpaces || [];
+        const currentSpace = allSpaces.find(s => s.id === spaceId);
+        if (!currentSpace) {
+            console.error('Study space not found for update');
+            return false;
+        }
+
         try {
             const spaceRef = this.ref(this.database, `studySpaces/${spaceId}`);
             await this.set(spaceRef, {
+                building: currentSpace.building,
+                name: currentSpace.name,
+                location: currentSpace.location,
+                hours: currentSpace.hours,
+                restrictions: currentSpace.restrictions,
                 crowdStatus: status,
                 lastUpdated: this.serverTimestamp(),
                 updatedBy: this.currentUser.uid
