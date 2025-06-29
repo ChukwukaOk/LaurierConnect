@@ -51,48 +51,99 @@ class FirebaseService {
         
         this.currentUser = null;
         this.listeners = new Map();
+        this.connectionStatus = 'disconnected';
     }
 
     async initialize() {
         try {
+            console.log('FirebaseService: Starting initialization...');
+            
+            // Check if Firebase is available
+            if (!this.database || !this.auth) {
+                throw new Error('Firebase SDK not loaded properly');
+            }
+
             // Sign in anonymously
-            await this.signInAnonymously(this.auth);
+            console.log('FirebaseService: Attempting anonymous sign-in...');
+            const userCredential = await this.signInAnonymously(this.auth);
+            console.log('FirebaseService: Anonymous sign-in successful', userCredential.user.uid);
             
             // Listen for auth state changes
             this.onAuthStateChanged(this.auth, (user) => {
                 this.currentUser = user;
-                console.log('Firebase auth state changed:', user ? 'Authenticated' : 'Not authenticated');
+                this.connectionStatus = user ? 'connected' : 'disconnected';
+                console.log('FirebaseService: Auth state changed:', user ? 'Authenticated' : 'Not authenticated');
+                
+                // Update UI connection status
+                this.updateConnectionStatus();
             });
 
+            this.connectionStatus = 'connected';
+            this.updateConnectionStatus();
             return true;
         } catch (error) {
-            console.error('Firebase initialization failed:', error);
+            console.error('FirebaseService: Initialization failed:', error);
+            this.connectionStatus = 'error';
+            this.updateConnectionStatus();
             return false;
+        }
+    }
+
+    updateConnectionStatus() {
+        const indicator = document.getElementById('connection-indicator');
+        const text = document.getElementById('connection-text');
+        
+        if (!indicator || !text) return;
+        
+        switch (this.connectionStatus) {
+            case 'connected':
+                indicator.className = 'connection-dot connected';
+                text.textContent = 'Connected';
+                break;
+            case 'disconnected':
+                indicator.className = 'connection-dot disconnected';
+                text.textContent = 'Disconnected';
+                break;
+            case 'error':
+                indicator.className = 'connection-dot disconnected';
+                text.textContent = 'Connection Error';
+                break;
+            default:
+                indicator.className = 'connection-dot';
+                text.textContent = 'Connecting...';
         }
     }
 
     // Study Spaces
     async getStudySpaces() {
-        const studySpacesRef = this.ref(this.database, 'studySpaces');
-        return new Promise((resolve) => {
-            this.onValue(studySpacesRef, (snapshot) => {
-                const data = snapshot.val();
-                if (data) {
-                    const spaces = Object.keys(data).map(key => ({
-                        id: key,
-                        ...data[key]
-                    }));
-                    resolve(spaces);
-                } else {
-                    resolve([]);
-                }
+        try {
+            const studySpacesRef = this.ref(this.database, 'studySpaces');
+            return new Promise((resolve, reject) => {
+                this.onValue(studySpacesRef, (snapshot) => {
+                    const data = snapshot.val();
+                    if (data) {
+                        const spaces = Object.keys(data).map(key => ({
+                            id: key,
+                            ...data[key]
+                        }));
+                        resolve(spaces);
+                    } else {
+                        resolve([]);
+                    }
+                }, (error) => {
+                    console.error('FirebaseService: Error reading study spaces:', error);
+                    reject(error);
+                });
             });
-        });
+        } catch (error) {
+            console.error('FirebaseService: Failed to get study spaces:', error);
+            return [];
+        }
     }
 
     async updateStudySpaceStatus(spaceId, status) {
         if (!this.currentUser) {
-            console.error('User not authenticated');
+            console.error('FirebaseService: User not authenticated');
             return false;
         }
 
@@ -100,7 +151,7 @@ class FirebaseService {
         const allSpaces = window.app?.state?.studySpaces || [];
         const currentSpace = allSpaces.find(s => s.id === spaceId);
         if (!currentSpace) {
-            console.error('Study space not found for update');
+            console.error('FirebaseService: Study space not found for update');
             return false;
         }
 
@@ -116,59 +167,79 @@ class FirebaseService {
                 lastUpdated: this.serverTimestamp(),
                 updatedBy: this.currentUser.uid
             });
+            console.log('FirebaseService: Study space status updated successfully');
             return true;
         } catch (error) {
-            console.error('Failed to update study space status:', error);
+            console.error('FirebaseService: Failed to update study space status:', error);
             return false;
         }
     }
 
     // Listen for real-time updates
     listenToStudySpaces(callback) {
-        const studySpacesRef = this.ref(this.database, 'studySpaces');
-        
-        const unsubscribe = this.onValue(studySpacesRef, (snapshot) => {
-            const data = snapshot.val();
-            if (data) {
-                const spaces = Object.keys(data).map(key => ({
-                    id: key,
-                    ...data[key]
-                }));
-                callback(spaces);
-            } else {
+        try {
+            const studySpacesRef = this.ref(this.database, 'studySpaces');
+            
+            const unsubscribe = this.onValue(studySpacesRef, (snapshot) => {
+                const data = snapshot.val();
+                if (data) {
+                    const spaces = Object.keys(data).map(key => ({
+                        id: key,
+                        ...data[key]
+                    }));
+                    callback(spaces);
+                } else {
+                    callback([]);
+                }
+            }, (error) => {
+                console.error('FirebaseService: Error listening to study spaces:', error);
                 callback([]);
-            }
-        });
+            });
 
-        this.listeners.set('studySpaces', unsubscribe);
-        return unsubscribe;
+            this.listeners.set('studySpaces', unsubscribe);
+            return unsubscribe;
+        } catch (error) {
+            console.error('FirebaseService: Failed to set up study spaces listener:', error);
+            return () => {};
+        }
     }
 
     // Initialize default study spaces if they don't exist
     async initializeStudySpaces(defaultSpaces) {
-        const studySpacesRef = this.ref(this.database, 'studySpaces');
-        
         try {
-            const snapshot = await this.onValue(studySpacesRef, (snapshot) => {
-                const data = snapshot.val();
-                if (!data || Object.keys(data).length === 0) {
-                    // Initialize with default data
-                    defaultSpaces.forEach(space => {
-                        this.set(this.ref(this.database, `studySpaces/${space.id}`), {
-                            building: space.building,
-                            name: space.name,
-                            location: space.location,
-                            hours: space.hours,
-                            restrictions: space.restrictions,
-                            crowdStatus: space.crowdStatus,
-                            lastUpdated: this.serverTimestamp(),
-                            updatedBy: 'system'
-                        });
+            const studySpacesRef = this.ref(this.database, 'studySpaces');
+            
+            // Check if study spaces already exist
+            const snapshot = await new Promise((resolve, reject) => {
+                this.onValue(studySpacesRef, (snapshot) => {
+                    resolve(snapshot);
+                }, (error) => {
+                    reject(error);
+                });
+            });
+            
+            const data = snapshot.val();
+            if (!data || Object.keys(data).length === 0) {
+                console.log('FirebaseService: Initializing default study spaces...');
+                // Initialize with default data
+                for (const space of defaultSpaces) {
+                    await this.set(this.ref(this.database, `studySpaces/${space.id}`), {
+                        building: space.building,
+                        name: space.name,
+                        location: space.location,
+                        hours: space.hours,
+                        restrictions: space.restrictions,
+                        crowdStatus: space.crowdStatus,
+                        lastUpdated: this.serverTimestamp(),
+                        updatedBy: 'system'
                     });
                 }
-            });
+                console.log('FirebaseService: Default study spaces initialized');
+            } else {
+                console.log('FirebaseService: Study spaces already exist, skipping initialization');
+            }
         } catch (error) {
-            console.error('Failed to initialize study spaces:', error);
+            console.error('FirebaseService: Failed to initialize study spaces:', error);
         }
     }
 
@@ -198,22 +269,37 @@ class AppState {
     }
 
     async init() {
-        // Initialize Firebase first
-        this.isConnected = await this.firebaseService.initialize();
-        this.updateConnectionStatus();
-        
-        this.loadBuildings();
-        this.loadSavedData();
-        
-        // Initialize study spaces with Firebase
-        await this.initializeStudySpaces();
-        
-        // Start listening for real-time updates
-        this.startRealtimeUpdates();
+        try {
+            console.log('AppState: Starting initialization...');
+            
+            // Initialize Firebase first
+            this.isConnected = await this.firebaseService.initialize();
+            console.log('AppState: Firebase initialization result:', this.isConnected);
+            
+            this.loadBuildings();
+            this.loadSavedData();
+            
+            // Initialize study spaces with Firebase
+            if (this.isConnected) {
+                await this.initializeStudySpaces();
+                
+                // Start listening for real-time updates
+                this.startRealtimeUpdates();
+            } else {
+                console.warn('AppState: Firebase not connected, using fallback mode');
+                // Load default study spaces for offline mode
+                this.studySpaces = this.getDefaultStudySpaces();
+            }
+        } catch (error) {
+            console.error('AppState: Initialization failed:', error);
+            this.isConnected = false;
+            // Load default study spaces for offline mode
+            this.studySpaces = this.getDefaultStudySpaces();
+        }
     }
 
-    async initializeStudySpaces() {
-        const defaultSpaces = [
+    getDefaultStudySpaces() {
+        return [
             {
                 id: 'bricker-1',
                 building: 'Bricker Academic Building',
@@ -269,27 +355,21 @@ class AppState {
                 crowdStatus: 'Unknown'
             }
         ];
+    }
 
+    async initializeStudySpaces() {
+        const defaultSpaces = this.getDefaultStudySpaces();
         await this.firebaseService.initializeStudySpaces(defaultSpaces);
     }
 
     startRealtimeUpdates() {
-        this.firebaseService.listenToStudySpaces((spaces) => {
-            this.studySpaces = spaces;
-            this.renderStudySpaces();
-        });
-    }
-
-    updateConnectionStatus() {
-        const indicator = document.getElementById('connection-indicator');
-        const text = document.getElementById('connection-text');
-        
         if (this.isConnected) {
-            indicator.className = 'connection-dot connected';
-            text.textContent = 'Connected';
-        } else {
-            indicator.className = 'connection-dot disconnected';
-            text.textContent = 'Disconnected';
+            this.firebaseService.listenToStudySpaces((spaces) => {
+                this.studySpaces = spaces;
+                if (window.app) {
+                    window.app.renderStudySpaces();
+                }
+            });
         }
     }
 
@@ -683,6 +763,26 @@ class LaurierConnectApp {
         this.closeBuildingModal();
     }
 
+    refreshStudySpaces() {
+        // Show a brief loading state
+        const refreshBtn = document.getElementById('refresh-study');
+        const originalText = refreshBtn.innerHTML;
+        refreshBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing...';
+        
+        setTimeout(() => {
+            refreshBtn.innerHTML = originalText;
+        }, 1000);
+    }
+
+    updateSearchClearButton() {
+        const clearBtn = document.getElementById('clear-search');
+        if (this.state.searchText) {
+            clearBtn.classList.remove('hidden');
+        } else {
+            clearBtn.classList.add('hidden');
+        }
+    }
+
     renderStudySpaces() {
         const studySpacesList = document.getElementById('study-spaces-list');
         
@@ -784,26 +884,6 @@ class LaurierConnectApp {
             lastUpdatedTime.textContent = 'Just now';
         } else {
             alert('Failed to update status. Please try again.');
-        }
-    }
-
-    refreshStudySpaces() {
-        // Show a brief loading state
-        const refreshBtn = document.getElementById('refresh-study');
-        const originalText = refreshBtn.innerHTML;
-        refreshBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing...';
-        
-        setTimeout(() => {
-            refreshBtn.innerHTML = originalText;
-        }, 1000);
-    }
-
-    updateSearchClearButton() {
-        const clearBtn = document.getElementById('clear-search');
-        if (this.state.searchText) {
-            clearBtn.classList.remove('hidden');
-        } else {
-            clearBtn.classList.add('hidden');
         }
     }
 }
